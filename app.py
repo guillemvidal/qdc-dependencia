@@ -14,6 +14,22 @@ st.set_page_config(
     layout="wide",
 )
 
+# --- Password gate ---
+def check_password():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    if st.session_state.authenticated:
+        return True
+    pwd = st.text_input("Contrasenya", type="password", placeholder="Introdueix la contrasenya")
+    if pwd == st.secrets.get("password", "dependencia2026"):
+        st.session_state.authenticated = True
+        st.rerun()
+    elif pwd:
+        st.error("Contrasenya incorrecta")
+    st.stop()
+
+check_password()
+
 DATA = Path(__file__).parent / "data"
 
 # ---------------------------------------------------------------------------
