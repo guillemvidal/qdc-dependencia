@@ -1,11 +1,13 @@
 """Parse 'Pestanya 3. Terminis' Excel files → terminis_<grau>.csv.
 
-Uses Mediana inicials — median without outlier removal.
+Uses Mitjana P90 — mean excluding the 10% slowest cases.
+Chosen because means are additive (sub-phases sum to the total), while
+medians are not.
 """
 import pandas as pd
 from pathlib import Path
 
-SRC = Path.home() / "Desktop" / "Pestanya 3. Terminis" / "Mediana inicials"
+SRC = Path.home() / "Desktop" / "Pestanya 3. Terminis" / "Mitjana P90"
 OUT = Path(__file__).parent
 
 MONTH_MAP = {

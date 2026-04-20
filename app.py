@@ -582,7 +582,7 @@ def render_p3():
     st.markdown("#### Metodologia")
     st.markdown(
         "- **Univers:** procediments tancats aquell mes · "
-        "**Indicador:** mediana · "
+        "**Indicador:** mitjana, excloent el 10% més lent (P90) · "
         "**Filtre:** només inicials (sense revisions ni reclamacions) · "
         "**Desglossament:** per grau (I, II, III)"
     )
