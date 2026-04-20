@@ -21,7 +21,11 @@ def check_password():
     if st.session_state.authenticated:
         return True
     pwd = st.text_input("Contrasenya", type="password", placeholder="Introdueix la contrasenya")
-    if pwd == st.secrets.get("password", "dependencia2026"):
+    try:
+        expected = st.secrets["password"]
+    except (KeyError, FileNotFoundError, Exception):
+        expected = "dependencia2026"
+    if pwd == expected:
         st.session_state.authenticated = True
         st.rerun()
     elif pwd:
@@ -369,82 +373,117 @@ def render_p2():
 # P3 — Terminis
 # ---------------------------------------------------------------------------
 def render_p3():
-    st.info("Pendent de rebre les dades corregides de terminis per fase.", icon="⏳")
+    st.info("Dades placeholder — s'actualitzaran quan arribi el dataset real.", icon="⏳")
     st.caption(f"Baseline: **{BASELINE}**")
 
-    phases_val = [("Sol·licitud → SEVAD", 24), ("Tramitació VAL", 20), ("Valoració", 128), ("Resolució VAL", 1)]
-    phases_pia = [("CAPECON", 29), ("Tramitació PIA", 70), ("Resolució PIA", 198), ("Notificació PIA", 3)]
-    total_val = sum(d for _, d in phases_val)
-    total_pia = sum(d for _, d in phases_pia)
-    total = total_val + total_pia
+    # Placeholder data: (phase_name, days)
+    # Valoració (sub-phases)
+    phases_val = [
+        ("Sol·licitud grau", 27),
+        ("Tramitació grau", 16),
+        ("Valoració grau", 157),
+    ]
+    # PIA (sub-phases)
+    phases_pia = [
+        ("CAPECON", 43),
+        ("Creació PIA", 164),
+        ("Resolució PIA", 5),
+    ]
+    total_val = sum(d for _, d in phases_val)  # 200
+    total_pia = sum(d for _, d in phases_pia)  # 212
+    total = total_val + total_pia  # 412
 
     # --- Grau selector ---
     grau_sel = st.radio("Grau", ["Tots", "Grau I", "Grau II", "Grau III"], horizontal=True)
-
-    # Dummy data per grau (placeholder — s'actualitzarà amb dades reals)
     grau_factors = {"Tots": 1.0, "Grau I": 0.75, "Grau II": 1.0, "Grau III": 1.35}
-    factor = grau_factors[grau_sel]
-    adj_total = int(TEMPS_TOTAL * factor)
+    f = grau_factors[grau_sel]
 
     # KPIs
     c1, c2, c3 = st.columns(3)
-    c1.metric("Termini total (mediana)", f"{adj_total} dies", "Objectiu: 240 dies", delta_color="off")
-    c2.metric("Fase valoració", f"{int(total_val * factor)} dies",
+    c1.metric("Termini total (mediana)", f"{int(total * f)} dies",
+              "Objectiu: 240 dies", delta_color="off")
+    c2.metric("Fase valoració", f"{int(total_val * f)} dies",
               f"{total_val/total*100:.0f}% del total", delta_color="off")
-    c3.metric("Fase PIA", f"{int(total_pia * factor)} dies",
+    c3.metric("Fase PIA", f"{int(total_pia * f)} dies",
               f"{total_pia/total*100:.0f}% del total", delta_color="off")
 
     st.markdown("")
     st.markdown("#### Circuit complet — fases")
 
-    val_colors = ["#fbbf24", "#f59e0b", "#ef4444", C_VAL]
-    pia_colors = ["#93c5fd", "#60a5fa", C_PIA, "#1e3a5f"]
-    all_phases = phases_val + phases_pia
-    all_colors = val_colors + pia_colors
-
-    phase_labels = []
-    for i, (name, _) in enumerate(all_phases):
-        prefix = "→ " if i > 0 else ""
-        phase_labels.append(f"{prefix}{name}")
+    # Two-tier visualization
+    val_colors = ["#fca5a5", "#ef4444", C_VAL]
+    pia_colors = ["#93c5fd", C_PIA, "#1e3a5f"]
 
     fig = go.Figure()
-    for i, (name, days) in enumerate(all_phases):
-        adj_days = int(days * factor)
+
+    # Row 1 (top): sub-phases stacked
+    for i, (name, days) in enumerate(phases_val):
+        d = int(days * f)
         fig.add_trace(go.Bar(
-            x=[adj_days], y=[phase_labels[i]], orientation="h",
-            marker_color=all_colors[i], marker_line_width=0,
-            text=f"  {adj_days}d", textposition="outside",
-            textfont=dict(size=11, color=C_BLACK),
-            hovertemplate=f"<b>{name}</b><br>{adj_days} dies<extra></extra>",
+            x=[d], y=["Subfases"], orientation="h", name=name,
+            marker_color=val_colors[i], marker_line_width=0,
+            text=f"{name}<br>{d}d" if d >= 25 else f"{d}d",
+            textposition="inside", insidetextanchor="middle",
+            textfont=dict(size=10, color="white"),
+            hovertemplate=f"<b>{name}</b><br>{d} dies<extra></extra>",
+            showlegend=False,
+        ))
+    for i, (name, days) in enumerate(phases_pia):
+        d = int(days * f)
+        fig.add_trace(go.Bar(
+            x=[d], y=["Subfases"], orientation="h", name=name,
+            marker_color=pia_colors[i], marker_line_width=0,
+            text=f"{name}<br>{d}d" if d >= 25 else f"{d}d",
+            textposition="inside", insidetextanchor="middle",
+            textfont=dict(size=10, color="white"),
+            hovertemplate=f"<b>{name}</b><br>{d} dies<extra></extra>",
             showlegend=False,
         ))
 
-    sfig(fig, 380)
+    # Row 2 (bottom): macro phases
+    val_tot = int(total_val * f)
+    pia_tot = int(total_pia * f)
+    fig.add_trace(go.Bar(
+        x=[val_tot], y=["Fases"], orientation="h", name="Valoració",
+        marker_color=C_VAL, marker_line_width=0,
+        text=f"<b>Valoració: {val_tot}d</b>",
+        textposition="inside", insidetextanchor="middle",
+        textfont=dict(size=13, color="white"),
+        hovertemplate=f"<b>Valoració</b><br>{val_tot} dies<extra></extra>",
+        showlegend=False,
+    ))
+    fig.add_trace(go.Bar(
+        x=[pia_tot], y=["Fases"], orientation="h", name="PIA",
+        marker_color=C_PIA, marker_line_width=0,
+        text=f"<b>PIA: {pia_tot}d</b>",
+        textposition="inside", insidetextanchor="middle",
+        textfont=dict(size=13, color="white"),
+        hovertemplate=f"<b>PIA</b><br>{pia_tot} dies<extra></extra>",
+        showlegend=False,
+    ))
+
+    # Total annotation at end
+    total_adj = val_tot + pia_tot
+    fig.add_annotation(
+        x=total_adj, y="Fases",
+        text=f"  <b>{total_adj}d</b>", showarrow=False, xanchor="left",
+        font=dict(size=13, color=C_BLACK),
+    )
+
+    sfig(fig, 220)
     fig.update_layout(
-        margin=dict(l=180, r=80, t=10, b=30),
-        yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
+        barmode="stack",
+        margin=dict(l=80, r=80, t=10, b=30),
+        yaxis=dict(tickfont=dict(size=12, color=C_BLACK), categoryorder="array",
+                   categoryarray=["Subfases", "Fases"]),
         xaxis=dict(title_text="Dies"),
         hovermode="closest",
+        bargap=0.25,
     )
     st.plotly_chart(fig, use_container_width=True, config=PC)
 
-    # Summary with colored borders
-    col_v, col_p = st.columns(2)
-    with col_v:
-        st.markdown(f'<div style="border-left:4px solid {C_VAL};padding-left:12px">'
-                     f'<strong>Valoració: {int(total_val * factor)} dies</strong><br>'
-                     f'<span style="color:{C_GRAY_500};font-size:0.85rem">'
-                     f'Sol·licitud → resolució grau</span></div>',
-                     unsafe_allow_html=True)
-    with col_p:
-        st.markdown(f'<div style="border-left:4px solid {C_PIA};padding-left:12px">'
-                     f'<strong>PIA: {int(total_pia * factor)} dies</strong><br>'
-                     f'<span style="color:{C_GRAY_500};font-size:0.85rem">'
-                     f'Resolució grau → prestació</span></div>',
-                     unsafe_allow_html=True)
-
     if grau_sel != "Tots":
-        st.caption(f"⚠️ Dades per {grau_sel} són estimacions placeholder. S'actualitzaran amb dades reals.")
+        st.caption(f"⚠️ Dades per {grau_sel} són estimacions placeholder.")
 
     st.markdown("")
     st.markdown("#### Metodologia")
