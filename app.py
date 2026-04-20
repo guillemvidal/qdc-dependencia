@@ -192,26 +192,38 @@ PC = dict(displayModeBar=False)  # plotly config
 # P1 — Impacte
 # ---------------------------------------------------------------------------
 BASELINE = "2026-01"  # Baseline for all tabs. All deltas compare to this.
-TEMPS_TOTAL = 372     # Internal median total time (sol → PIA), days
-
 def render_p1():
     val, pia = load_volume()
     form = load_formularis()
+    terminis = load_terminis()
 
     last = val["mes"].iloc[-1]
     # Find baseline index
     bl_candidates = val[val["mes"] == BASELINE].index
     bl = bl_candidates[0] if len(bl_candidates) > 0 else 0
 
-    st.caption(f"Últimes dades: **{last}** · Baseline: **{BASELINE}**")
+    st.caption(f"Últimes dades: **{fmt_ym(last)}** · Baseline: **{BASELINE_LABEL}**")
 
-    # --- Row 1: headline KPI ---
-    st.metric(
-        label="TEMPS TOTAL SOL·LICITUD → PRESTACIÓ (mediana)",
-        value=f"{TEMPS_TOTAL} dies",
-        delta="—",  # Will show real delta when we have time series
-        delta_color="off",
-    )
+    # --- Row 1: termini KPIs (Total · Valoració · PIA) ---
+    df_tot = terminis["Tots"]
+    row_t = _latest_complete(df_tot)
+    bl_y, bl_m = int(BASELINE[:4]), int(BASELINE[5:7])
+    bl_rows_t = df_tot[(df_tot["fecha"].dt.year == bl_y) & (df_tot["fecha"].dt.month == bl_m)]
+    bl_t = bl_rows_t.iloc[0] if len(bl_rows_t) else None
+
+    v_now, p_now, t_now = _phase_totals(row_t)
+    if bl_t is not None:
+        v_bl, p_bl, t_bl = _phase_totals(bl_t)
+        d_total = f"{t_now - t_bl:+d}d"
+        d_val = f"{v_now - v_bl:+d}d"
+        d_pia = f"{p_now - p_bl:+d}d"
+    else:
+        d_total = d_val = d_pia = "—"
+
+    t1, t2, t3 = st.columns(3)
+    t1.metric("Temps total sol·licitud → prestació", f"{t_now} dies", d_total, delta_color="inverse")
+    t2.metric("Fase valoració", f"{v_now} dies", d_val, delta_color="inverse")
+    t3.metric("Fase PIA", f"{p_now} dies", d_pia, delta_color="inverse")
 
     st.markdown("")
 
@@ -326,7 +338,7 @@ def render_p1():
 # ---------------------------------------------------------------------------
 def render_p2():
     val, pia = load_volume()
-    st.caption(f"Últimes dades: **{val['mes'].iloc[-1]}** · Baseline: **{BASELINE}**")
+    st.caption(f"Últimes dades: **{fmt_ym(val['mes'].iloc[-1])}** · Baseline: **{BASELINE_LABEL}**")
 
     for label, df, color in [("Valoració", val, C_VAL), ("PIA", pia, C_PIA)]:
         st.markdown(f"#### {label}")
@@ -372,125 +384,206 @@ def render_p2():
 # ---------------------------------------------------------------------------
 # P3 — Terminis
 # ---------------------------------------------------------------------------
+@st.cache_data
+def load_terminis():
+    keys = {"Tots": "total", "Grau I": "g1", "Grau II": "g2", "Grau III": "g3"}
+    out = {}
+    for label, key in keys.items():
+        df = pd.read_csv(DATA / f"terminis_{key}.csv")
+        df["fecha"] = pd.to_datetime(df["fecha"])
+        out[label] = df
+    return out
+
+
+def _latest_complete(df):
+    """Return the latest row with full phase data (PIA phases non-null)."""
+    complete = df.dropna(subset=["pia", "capecon", "creacio_pia", "res_pia"])
+    return complete.sort_values("fecha").iloc[-1]
+
+
+CAT_MONTHS = ["gener", "febrer", "març", "abril", "maig", "juny",
+              "juliol", "agost", "setembre", "octubre", "novembre", "desembre"]
+
+
+def fmt_ym(s):
+    """'2026-03' or '2026-03-31' or datetime → 'Març 2026'."""
+    if hasattr(s, "year") and hasattr(s, "month"):
+        y, m = s.year, s.month
+    else:
+        s = str(s)
+        y, m = int(s[:4]), int(s[5:7])
+    return f"{CAT_MONTHS[m - 1].capitalize()} {y}"
+
+
+BASELINE_LABEL = fmt_ym(BASELINE)
+
+
+def _phase_totals(row):
+    val = int(round(row["sol_grau"] + row["tram_grau"] + row["val_grau"]))
+    pia = int(round(row["capecon"] + row["creacio_pia"] + row["res_pia"]))
+    return val, pia, val + pia
+
+
 def render_p3():
-    st.info("Dades placeholder — s'actualitzaran quan arribi el dataset real.", icon="⏳")
-    st.caption(f"Baseline: **{BASELINE}**")
+    terminis = load_terminis()
 
-    # Placeholder data: (phase_name, days)
-    # Valoració (sub-phases)
-    phases_val = [
-        ("Sol·licitud grau", 27),
-        ("Tramitació grau", 16),
-        ("Valoració grau", 157),
-    ]
-    # PIA (sub-phases)
-    phases_pia = [
-        ("CAPECON", 43),
-        ("Creació PIA", 164),
-        ("Resolució PIA", 5),
-    ]
-    total_val = sum(d for _, d in phases_val)  # 200
-    total_pia = sum(d for _, d in phases_pia)  # 212
-    total = total_val + total_pia  # 412
+    df_tot = terminis["Tots"]
+    row_tot = _latest_complete(df_tot)
 
-    # --- Grau selector ---
-    grau_sel = st.radio("Grau", ["Tots", "Grau I", "Grau II", "Grau III"], horizontal=True)
-    grau_factors = {"Tots": 1.0, "Grau I": 0.75, "Grau II": 1.0, "Grau III": 1.35}
-    f = grau_factors[grau_sel]
+    # Baseline row (2026-01)
+    bl_year, bl_month = int(BASELINE[:4]), int(BASELINE[5:7])
+    bl_rows = df_tot[(df_tot["fecha"].dt.year == bl_year) & (df_tot["fecha"].dt.month == bl_month)]
+    bl_row = bl_rows.iloc[0] if len(bl_rows) else None
 
-    # KPIs
+    st.caption(f"Últimes dades: **{fmt_ym(row_tot['fecha'])}** · Baseline: **{BASELINE_LABEL}**")
+
+    val_now, pia_now, total_now = _phase_totals(row_tot)
+
+    if bl_row is not None:
+        val_bl, pia_bl, total_bl = _phase_totals(bl_row)
+        delta_total = f"{total_now - total_bl:+d}d"
+        delta_val = f"{val_now - val_bl:+d}d"
+        delta_pia = f"{pia_now - pia_bl:+d}d"
+    else:
+        delta_total = delta_val = delta_pia = "—"
+
     c1, c2, c3 = st.columns(3)
-    c1.metric("Termini total (mediana)", f"{int(total * f)} dies",
-              "Objectiu: 240 dies", delta_color="off")
-    c2.metric("Fase valoració", f"{int(total_val * f)} dies",
-              f"{total_val/total*100:.0f}% del total", delta_color="off")
-    c3.metric("Fase PIA", f"{int(total_pia * f)} dies",
-              f"{total_pia/total*100:.0f}% del total", delta_color="off")
+    c1.metric("Termini total", f"{total_now} dies", delta_total, delta_color="inverse")
+    c2.metric("Fase valoració", f"{val_now} dies", delta_val, delta_color="inverse")
+    c3.metric("Fase PIA", f"{pia_now} dies", delta_pia, delta_color="inverse")
 
     st.markdown("")
-    st.markdown("#### Circuit complet — fases")
+    st.markdown("#### Circuit complet — fases (per grau)")
 
-    # Two-tier visualization
-    val_colors = ["#fca5a5", "#ef4444", C_VAL]
-    pia_colors = ["#93c5fd", C_PIA, "#1e3a5f"]
+    phase_spec = [
+        ("Sol·licitud grau", "sol_grau", "#fca5a5"),
+        ("Tramitació grau", "tram_grau", "#ef4444"),
+        ("Valoració grau", "val_grau", C_VAL),
+        ("CAPECON", "capecon", "#93c5fd"),
+        ("Creació PIA", "creacio_pia", C_PIA),
+        ("Resolució PIA", "res_pia", "#1e3a5f"),
+    ]
 
-    fig = go.Figure()
+    abbrev = {
+        "Sol·licitud grau": "Sol·l.",
+        "Tramitació grau": "Tram.",
+        "Resolució PIA": "Res.",
+    }
 
-    # Row 1 (top): sub-phases stacked
-    for i, (name, days) in enumerate(phases_val):
-        d = int(days * f)
-        fig.add_trace(go.Bar(
-            x=[d], y=["Subfases"], orientation="h", name=name,
-            marker_color=val_colors[i], marker_line_width=0,
-            text=f"{name}<br>{d}d" if d >= 25 else f"{d}d",
-            textposition="inside", insidetextanchor="middle",
-            textfont=dict(size=10, color="white"),
-            hovertemplate=f"<b>{name}</b><br>{d} dies<extra></extra>",
-            showlegend=False,
-        ))
-    for i, (name, days) in enumerate(phases_pia):
-        d = int(days * f)
-        fig.add_trace(go.Bar(
-            x=[d], y=["Subfases"], orientation="h", name=name,
-            marker_color=pia_colors[i], marker_line_width=0,
-            text=f"{name}<br>{d}d" if d >= 25 else f"{d}d",
-            textposition="inside", insidetextanchor="middle",
-            textfont=dict(size=10, color="white"),
-            hovertemplate=f"<b>{name}</b><br>{d} dies<extra></extra>",
-            showlegend=False,
-        ))
+    def bar_label(name, d, big=False):
+        if d < 8:
+            return ""
+        threshold = 50 if big else 40
+        if d >= threshold:
+            return f"<b>{name}</b><br>{d}d"
+        return f"<b>{abbrev.get(name, name)}</b><br>{d}d"
 
-    # Row 2 (bottom): macro phases
-    val_tot = int(total_val * f)
-    pia_tot = int(total_pia * f)
-    fig.add_trace(go.Bar(
-        x=[val_tot], y=["Fases"], orientation="h", name="Valoració",
-        marker_color=C_VAL, marker_line_width=0,
-        text=f"<b>Valoració: {val_tot}d</b>",
-        textposition="inside", insidetextanchor="middle",
-        textfont=dict(size=13, color="white"),
-        hovertemplate=f"<b>Valoració</b><br>{val_tot} dies<extra></extra>",
-        showlegend=False,
-    ))
-    fig.add_trace(go.Bar(
-        x=[pia_tot], y=["Fases"], orientation="h", name="PIA",
-        marker_color=C_PIA, marker_line_width=0,
-        text=f"<b>PIA: {pia_tot}d</b>",
-        textposition="inside", insidetextanchor="middle",
-        textfont=dict(size=13, color="white"),
-        hovertemplate=f"<b>PIA</b><br>{pia_tot} dies<extra></extra>",
-        showlegend=False,
-    ))
+    def grau_bar(row, height, big=False, grau_label=None):
+        fig = go.Figure()
+        tot = 0
+        for phase_name, col, color in phase_spec:
+            d = int(round(row[col]))
+            tot += d
+            fig.add_trace(go.Bar(
+                x=[d], y=[""], orientation="h", name=phase_name,
+                marker_color=color, marker_line_width=0,
+                text=bar_label(phase_name, d, big=big),
+                textposition="inside", insidetextanchor="middle",
+                textfont=dict(size=14 if big else 11, color="white"),
+                textangle=0, constraintext="inside",
+                hovertemplate=f"<b>{phase_name}</b><br>{d} dies<extra></extra>",
+                showlegend=False,
+            ))
+        fig.add_annotation(
+            x=tot, y=0, text=f"  <b>{tot}d</b>",
+            showarrow=False, xanchor="left",
+            font=dict(size=16 if big else 13, color=C_BLACK),
+        )
+        if grau_label:
+            fig.add_annotation(
+                x=0, xref="paper", y=0, yref="y",
+                text=f"<b>{grau_label}</b>",
+                showarrow=False, xanchor="right",
+                font=dict(size=12, color=C_BLACK),
+                xshift=-8,
+            )
+        sfig(fig, height)
+        fig.update_layout(
+            barmode="stack",
+            margin=dict(l=60, r=90, t=5 if big else 0, b=25 if big else 0),
+            yaxis=dict(visible=False),
+            xaxis=dict(
+                title_text="Dies" if big else None,
+                tickfont=dict(size=12 if big else 10),
+                showticklabels=big,
+            ),
+            hovermode="closest",
+            bargap=0.4,
+        )
+        return fig
 
-    # Total annotation at end
-    total_adj = val_tot + pia_tot
-    fig.add_annotation(
-        x=total_adj, y="Fases",
-        text=f"  <b>{total_adj}d</b>", showarrow=False, xanchor="left",
-        font=dict(size=13, color=C_BLACK),
+    # Tots — big, full width
+    st.plotly_chart(
+        grau_bar(row_tot, height=200, big=True, grau_label="Tots"),
+        use_container_width=True, config=PC,
     )
 
-    sfig(fig, 220)
-    fig.update_layout(
+    # Grau I / II / III in a single figure with independent x-axes
+    labels = ["Grau I", "Grau II", "Grau III"]
+    rows_by_grau = {g: _latest_complete(terminis[g]) for g in labels}
+
+    fig_g = make_subplots(
+        rows=3, cols=1, shared_xaxes=False,
+        vertical_spacing=0.02,
+    )
+    for row_idx, label in enumerate(labels, start=1):
+        r = rows_by_grau[label]
+        tot = 0
+        for phase_name, col, color in phase_spec:
+            d = int(round(r[col]))
+            tot += d
+            fig_g.add_trace(go.Bar(
+                x=[d], y=[""], orientation="h", name=phase_name,
+                marker_color=color, marker_line_width=0,
+                text=bar_label(phase_name, d),
+                textposition="inside", insidetextanchor="middle",
+                textfont=dict(size=11, color="white"),
+                textangle=0, constraintext="inside",
+                hovertemplate=f"<b>{label} — {phase_name}</b><br>{d} dies<extra></extra>",
+                showlegend=False,
+            ), row=row_idx, col=1)
+        # Total annotation on the right
+        fig_g.add_annotation(
+            xref=f"x{row_idx if row_idx > 1 else ''}", yref=f"y{row_idx if row_idx > 1 else ''}",
+            x=tot, y=0, text=f"  <b>{tot}d</b>",
+            showarrow=False, xanchor="left",
+            font=dict(size=13, color=C_BLACK),
+        )
+        # Grau label on the left
+        fig_g.add_annotation(
+            xref="paper", yref=f"y{row_idx if row_idx > 1 else ''}",
+            x=0, y=0, text=f"<b>{label}</b>",
+            showarrow=False, xanchor="right", xshift=-8,
+            font=dict(size=12, color=C_BLACK),
+        )
+
+    fig_g.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, showline=False, visible=False)
+    fig_g.update_yaxes(visible=False)
+    sfig(fig_g, 200)
+    fig_g.update_layout(
         barmode="stack",
-        margin=dict(l=80, r=80, t=10, b=30),
-        yaxis=dict(tickfont=dict(size=12, color=C_BLACK), categoryorder="array",
-                   categoryarray=["Subfases", "Fases"]),
-        xaxis=dict(title_text="Dies"),
+        margin=dict(l=60, r=90, t=0, b=0),
+        bargap=0.4,
         hovermode="closest",
-        bargap=0.25,
     )
-    st.plotly_chart(fig, use_container_width=True, config=PC)
-
-    if grau_sel != "Tots":
-        st.caption(f"⚠️ Dades per {grau_sel} són estimacions placeholder.")
+    st.plotly_chart(fig_g, use_container_width=True, config=PC)
 
     st.markdown("")
     st.markdown("#### Metodologia")
     st.markdown(
         "- **Univers:** procediments tancats aquell mes · "
-        "**Indicador:** mediana (no mitjana), excloent >P90 · "
-        "**Filtre:** només inicials (sense revisions) · "
+        "**Indicador:** mediana · "
+        "**Filtre:** només inicials (sense revisions ni reclamacions) · "
         "**Desglossament:** per grau (I, II, III)"
     )
 
@@ -544,7 +637,7 @@ def render_p5():
     last_date = temps["fecha"].max()
     EXCLUDE = ["TOTAL", "Ceuta y Melilla"]
 
-    st.caption(f"Dades públiques IMSERSO — últim mes disponible: **{last_date}**")
+    st.caption(f"Últimes dades: **{fmt_ym(last_date)}** · Font: **IMSERSO**")
     st.markdown(
         "> Aquestes dades són les que publica l'IMSERSO i les que utilitzen premsa i oposició. "
         "**No coincideixen amb les dades internes** (SIDEP) per diferències metodològiques "
@@ -612,33 +705,53 @@ def render_p5():
     fig.update_xaxes(title_text="Dies", range=[0, max_total * 1.15])
     st.plotly_chart(fig, use_container_width=True, config=PC)
 
-    # --- Chart 2: Evolution Catalunya decomposed ---
-    st.markdown("#### Evolució temps — Catalunya segons IMSERSO")
+    # --- Chart 2: Evolution (two panels) ---
+    st.markdown("#### Evolució temporal")
+
     cat_e = temps[temps["ccaa"] == "Cataluña"].sort_values("fecha")
     esp_e = temps[temps["ccaa"] == "TOTAL"].sort_values("fecha")
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=cat_e["fecha"], y=cat_e["tiempo_sol_a_grado_dias"],
-        name="CAT: Sol → Grau", mode="lines",
-        line=dict(width=0.5, color=C_VAL), stackgroup="cat",
-        fillcolor=C_VAL_LIGHT, hovertemplate="%{y:.0f}d",
-    ))
-    fig.add_trace(go.Scatter(
-        x=cat_e["fecha"], y=cat_e["tiempo_grado_a_pia_dias"],
-        name="CAT: Grau → PIA", mode="lines",
-        line=dict(width=0.5, color=C_PIA), stackgroup="cat",
-        fillcolor=C_PIA_LIGHT, hovertemplate="%{y:.0f}d",
-    ))
-    fig.add_trace(go.Scatter(
-        x=esp_e["fecha"], y=esp_e["tiempo_sol_a_pia_dias"],
-        name="Espanya (total)", mode="lines",
-        line=dict(color=C_GRAY_500, width=2, dash="dash"),
-        hovertemplate="%{y:.0f}d",
-    ))
-    sfig(fig, 370)
-    fig.update_yaxes(title_text="Dies")
-    st.plotly_chart(fig, use_container_width=True, config=PC)
+    col_ev_a, col_ev_b = st.columns(2)
+
+    # Left: Total time Catalunya vs Espanya
+    with col_ev_a:
+        st.caption("**Com estem** — Temps total sol·licitud → PIA")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=cat_e["fecha"], y=cat_e["tiempo_sol_a_pia_dias"],
+            name="Catalunya", mode="lines",
+            line=dict(color=C_BLACK, width=2.5),
+            hovertemplate="%{y:.0f}d",
+        ))
+        fig.add_trace(go.Scatter(
+            x=esp_e["fecha"], y=esp_e["tiempo_sol_a_pia_dias"],
+            name="Espanya (mitjana)", mode="lines",
+            line=dict(color=C_GRAY_500, width=2, dash="dash"),
+            hovertemplate="%{y:.0f}d",
+        ))
+        sfig(fig, 340)
+        fig.update_yaxes(title_text="Dies")
+        st.plotly_chart(fig, use_container_width=True, config=PC)
+
+    # Right: Catalunya decomposition
+    with col_ev_b:
+        st.caption("**On és el coll d'ampolla** — Catalunya per fase")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=cat_e["fecha"], y=cat_e["tiempo_sol_a_grado_dias"],
+            name="Sol → Grau", mode="lines",
+            line=dict(color=C_VAL, width=2.5),
+            hovertemplate="%{y:.0f}d",
+        ))
+        fig.add_trace(go.Scatter(
+            x=cat_e["fecha"], y=cat_e["tiempo_grado_a_pia_dias"],
+            name="Grau → PIA", mode="lines",
+            line=dict(color=C_PIA, width=2.5),
+            hovertemplate="%{y:.0f}d",
+        ))
+        sfig(fig, 340)
+        fig.update_yaxes(title_text="Dies")
+        st.plotly_chart(fig, use_container_width=True, config=PC)
 
 
 # ---------------------------------------------------------------------------
