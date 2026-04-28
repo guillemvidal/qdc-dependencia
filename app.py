@@ -196,6 +196,7 @@ def render_p1():
     val, pia = load_volume()
     form = load_formularis()
     terminis = load_terminis()
+    terminis_med = load_terminis_mediana()
 
     last = val["mes"].iloc[-1]
     # Find baseline index
@@ -204,24 +205,30 @@ def render_p1():
 
     st.caption(f"Últimes dades: **{fmt_ym(last)}** · Baseline: **{BASELINE_LABEL}**")
 
-    # --- Row 1: termini KPIs (Total · Valoració · PIA) ---
+    # --- Row 1: termini KPIs (Total mediana · Valoració · PIA) ---
     df_tot = terminis["Tots"]
+    df_tot_med = terminis_med["Tots"]
     row_t = _latest_complete(df_tot)
     bl_y, bl_m = int(BASELINE[:4]), int(BASELINE[5:7])
     bl_rows_t = df_tot[(df_tot["fecha"].dt.year == bl_y) & (df_tot["fecha"].dt.month == bl_m)]
     bl_t = bl_rows_t.iloc[0] if len(bl_rows_t) else None
 
-    v_now, p_now, t_now = _phase_totals(row_t)
+    v_now, p_now, _ = _phase_totals(row_t)
+    t_now_med = _mediana_total(df_tot_med, row_t["fecha"])
+    t_bl_med = _mediana_total(df_tot_med, pd.Timestamp(year=bl_y, month=bl_m, day=1))
+
     if bl_t is not None:
-        v_bl, p_bl, t_bl = _phase_totals(bl_t)
-        d_total = f"{t_now - t_bl:+d}d"
+        v_bl, p_bl, _ = _phase_totals(bl_t)
         d_val = f"{v_now - v_bl:+d}d"
         d_pia = f"{p_now - p_bl:+d}d"
     else:
-        d_total = d_val = d_pia = "—"
+        d_val = d_pia = "—"
+    d_total = f"{t_now_med - t_bl_med:+d}d" if (t_now_med is not None and t_bl_med is not None) else "—"
 
     t1, t2, t3 = st.columns(3)
-    t1.metric("Temps total sol·licitud → prestació", f"{t_now} dies", d_total, delta_color="inverse")
+    t1.metric("Temps total sol·licitud → prestació (mediana)",
+              f"{t_now_med} dies" if t_now_med is not None else "—",
+              d_total, delta_color="inverse")
     t2.metric("Fase valoració", f"{v_now} dies", d_val, delta_color="inverse")
     t3.metric("Fase PIA", f"{p_now} dies", d_pia, delta_color="inverse")
 
@@ -395,6 +402,25 @@ def load_terminis():
     return out
 
 
+@st.cache_data
+def load_terminis_mediana():
+    keys = {"Tots": "total", "Grau I": "g1", "Grau II": "g2", "Grau III": "g3"}
+    out = {}
+    for label, key in keys.items():
+        df = pd.read_csv(DATA / f"terminis_{key}_mediana.csv")
+        df["fecha"] = pd.to_datetime(df["fecha"])
+        out[label] = df
+    return out
+
+
+def _mediana_total(df_med, fecha):
+    """Return median 'total' for a given month, or None if missing."""
+    m = df_med[df_med["fecha"] == fecha]
+    if not len(m) or pd.isna(m.iloc[0]["total"]):
+        return None
+    return int(round(m.iloc[0]["total"]))
+
+
 def _latest_complete(df):
     """Return the latest row with full phase data (PIA phases non-null)."""
     complete = df.dropna(subset=["pia", "capecon", "creacio_pia", "res_pia"])
@@ -426,8 +452,10 @@ def _phase_totals(row):
 
 def render_p3():
     terminis = load_terminis()
+    terminis_med = load_terminis_mediana()
 
     df_tot = terminis["Tots"]
+    df_tot_med = terminis_med["Tots"]
     row_tot = _latest_complete(df_tot)
 
     # Baseline row (2026-01)
@@ -437,18 +465,23 @@ def render_p3():
 
     st.caption(f"Últimes dades: **{fmt_ym(row_tot['fecha'])}** · Baseline: **{BASELINE_LABEL}**")
 
-    val_now, pia_now, total_now = _phase_totals(row_tot)
+    val_now, pia_now, _ = _phase_totals(row_tot)
+    total_med_now = _mediana_total(df_tot_med, row_tot["fecha"])
+    total_med_bl = _mediana_total(df_tot_med, pd.Timestamp(year=bl_year, month=bl_month, day=1))
 
     if bl_row is not None:
-        val_bl, pia_bl, total_bl = _phase_totals(bl_row)
-        delta_total = f"{total_now - total_bl:+d}d"
+        val_bl, pia_bl, _ = _phase_totals(bl_row)
         delta_val = f"{val_now - val_bl:+d}d"
         delta_pia = f"{pia_now - pia_bl:+d}d"
     else:
-        delta_total = delta_val = delta_pia = "—"
+        delta_val = delta_pia = "—"
+    delta_total = (f"{total_med_now - total_med_bl:+d}d"
+                   if (total_med_now is not None and total_med_bl is not None) else "—")
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Termini total", f"{total_now} dies", delta_total, delta_color="inverse")
+    c1.metric("Termini total (mediana)",
+              f"{total_med_now} dies" if total_med_now is not None else "—",
+              delta_total, delta_color="inverse")
     c2.metric("Fase valoració", f"{val_now} dies", delta_val, delta_color="inverse")
     c3.metric("Fase PIA", f"{pia_now} dies", delta_pia, delta_color="inverse")
 
@@ -478,7 +511,7 @@ def render_p3():
             return f"<b>{name}</b><br>{d}d"
         return f"<b>{abbrev.get(name, name)}</b><br>{d}d"
 
-    def grau_bar(row, height, big=False, grau_label=None):
+    def grau_bar(row, height, big=False, grau_label=None, mediana=None):
         fig = go.Figure()
         tot = 0
         for phase_name, col, color in phase_spec:
@@ -494,8 +527,9 @@ def render_p3():
                 hovertemplate=f"<b>{phase_name}</b><br>{d} dies<extra></extra>",
                 showlegend=False,
             ))
+        med_txt = f" · <span style='color:{C_GRAY_500}'>{mediana}d (mediana)</span>" if mediana is not None else ""
         fig.add_annotation(
-            x=tot, y=0, text=f"  <b>{tot}d</b>",
+            x=tot, y=0, text=f"  <b>{tot}d</b>{med_txt}",
             showarrow=False, xanchor="left",
             font=dict(size=16 if big else 13, color=C_BLACK),
         )
@@ -510,7 +544,7 @@ def render_p3():
         sfig(fig, height)
         fig.update_layout(
             barmode="stack",
-            margin=dict(l=60, r=90, t=5 if big else 0, b=25 if big else 0),
+            margin=dict(l=60, r=200, t=5 if big else 0, b=25 if big else 0),
             yaxis=dict(visible=False),
             xaxis=dict(
                 title_text="Dies" if big else None,
@@ -524,13 +558,14 @@ def render_p3():
 
     # Tots — big, full width
     st.plotly_chart(
-        grau_bar(row_tot, height=200, big=True, grau_label="Tots"),
+        grau_bar(row_tot, height=200, big=True, grau_label="Tots", mediana=total_med_now),
         use_container_width=True, config=PC,
     )
 
     # Grau I / II / III in a single figure with independent x-axes
     labels = ["Grau I", "Grau II", "Grau III"]
     rows_by_grau = {g: _latest_complete(terminis[g]) for g in labels}
+    med_by_grau = {g: _mediana_total(terminis_med[g], rows_by_grau[g]["fecha"]) for g in labels}
 
     fig_g = make_subplots(
         rows=3, cols=1, shared_xaxes=False,
@@ -552,10 +587,12 @@ def render_p3():
                 hovertemplate=f"<b>{label} — {phase_name}</b><br>{d} dies<extra></extra>",
                 showlegend=False,
             ), row=row_idx, col=1)
-        # Total annotation on the right
+        # Total annotation on the right (with mediana per grau)
+        med = med_by_grau[label]
+        med_txt = f" · <span style='color:{C_GRAY_500}'>{med}d (mediana)</span>" if med is not None else ""
         fig_g.add_annotation(
             xref=f"x{row_idx if row_idx > 1 else ''}", yref=f"y{row_idx if row_idx > 1 else ''}",
-            x=tot, y=0, text=f"  <b>{tot}d</b>",
+            x=tot, y=0, text=f"  <b>{tot}d</b>{med_txt}",
             showarrow=False, xanchor="left",
             font=dict(size=13, color=C_BLACK),
         )
@@ -572,7 +609,7 @@ def render_p3():
     sfig(fig_g, 200)
     fig_g.update_layout(
         barmode="stack",
-        margin=dict(l=60, r=90, t=0, b=0),
+        margin=dict(l=60, r=200, t=0, b=0),
         bargap=0.4,
         hovermode="closest",
     )
@@ -582,9 +619,11 @@ def render_p3():
     st.markdown("#### Metodologia")
     st.markdown(
         "- **Univers:** procediments tancats aquell mes · "
-        "**Indicador:** mitjana, excloent el 10% més lent (P90) · "
         "**Filtre:** només inicials (sense revisions ni reclamacions) · "
-        "**Desglossament:** per grau (I, II, III)"
+        "**Desglossament:** per grau (I, II, III)\n"
+        "- **KPI principal:** *mediana* (robusta a outliers; valor de referència)\n"
+        "- **Barres de fases:** *mitjana excloent el 10% més lent (P90)*, "
+        "perquè les mitjanes sí que sumen entre fases (la mediana no)"
     )
 
 

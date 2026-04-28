@@ -1,13 +1,20 @@
-"""Parse 'Pestanya 3. Terminis' Excel files → terminis_<grau>.csv.
+"""Parse 'Pestanya 3. Terminis' Excel files → terminis_<grau>[_mediana].csv.
 
-Uses Mitjana P90 — mean excluding the 10% slowest cases.
-Chosen because means are additive (sub-phases sum to the total), while
-medians are not.
+Generates two parallel sets:
+  - Mitjana P90 → terminis_<grau>.csv         (additive: sub-phases sum to total)
+  - Mediana inicials → terminis_<grau>_mediana.csv  (robust to outliers, non-additive)
+
+The dashboard uses mediana for the headline total KPI and Mitjana P90 for
+the phase-by-phase breakdown.
 """
 import pandas as pd
 from pathlib import Path
 
-SRC = Path.home() / "Desktop" / "Pestanya 3. Terminis" / "Mitjana P90"
+BASE = Path.home() / "Desktop" / "Pestanya 3. Terminis"
+SOURCES = {
+    "": BASE / "Mitjana P90",
+    "_mediana": BASE / "Mediana inicials",
+}
 OUT = Path(__file__).parent
 
 MONTH_MAP = {
@@ -48,8 +55,12 @@ def parse(fp):
 
 
 if __name__ == "__main__":
-    for key, fname in FILES.items():
-        df = parse(SRC / fname)
-        out = OUT / f"terminis_{key}.csv"
-        df.to_csv(out, index=False)
-        print(f"✓ {out.name} ({len(df)} rows, latest: {df['fecha'].max().date()})")
+    for suffix, src in SOURCES.items():
+        if not src.exists():
+            print(f"⚠ skipping {src} (not found)")
+            continue
+        for key, fname in FILES.items():
+            df = parse(src / fname)
+            out = OUT / f"terminis_{key}{suffix}.csv"
+            df.to_csv(out, index=False)
+            print(f"✓ {out.name} ({len(df)} rows, latest: {df['fecha'].max().date()})")
