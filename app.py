@@ -213,24 +213,30 @@ def render_p1():
     bl_rows_t = df_tot[(df_tot["fecha"].dt.year == bl_y) & (df_tot["fecha"].dt.month == bl_m)]
     bl_t = bl_rows_t.iloc[0] if len(bl_rows_t) else None
 
-    v_now, p_now, _ = _phase_totals(row_t)
+    v_now, p_now, t_now_p90 = _phase_totals(row_t)
     t_now_med = _mediana_total(df_tot_med, row_t["fecha"])
     t_bl_med = _mediana_total(df_tot_med, pd.Timestamp(year=bl_y, month=bl_m, day=1))
 
     if bl_t is not None:
-        v_bl, p_bl, _ = _phase_totals(bl_t)
+        v_bl, p_bl, t_bl_p90 = _phase_totals(bl_t)
         d_val = f"{v_now - v_bl:+d}d"
         d_pia = f"{p_now - p_bl:+d}d"
+        d_total_p90 = f"{t_now_p90 - t_bl_p90:+d}d"
     else:
-        d_val = d_pia = "—"
-    d_total = f"{t_now_med - t_bl_med:+d}d" if (t_now_med is not None and t_bl_med is not None) else "—"
+        d_val = d_pia = d_total_p90 = "—"
+    d_total_med = f"{t_now_med - t_bl_med:+d}d" if (t_now_med is not None and t_bl_med is not None) else "—"
 
-    t1, t2, t3 = st.columns(3)
-    t1.metric("Temps total sol·licitud → prestació (mediana)",
+    t1, t2, t3, t4 = st.columns(4)
+    t1.metric("Temps total — Mediana",
               f"{t_now_med} dies" if t_now_med is not None else "—",
-              d_total, delta_color="inverse")
-    t2.metric("Fase valoració", f"{v_now} dies", d_val, delta_color="inverse")
-    t3.metric("Fase PIA", f"{p_now} dies", d_pia, delta_color="inverse")
+              d_total_med, delta_color="inverse",
+              help="Mediana del termini total sol·licitud → prestació. Robusta a outliers.")
+    t2.metric("Temps total — Mitjana sense outliers",
+              f"{t_now_p90} dies",
+              d_total_p90, delta_color="inverse",
+              help="Mitjana del termini total, excloent el 10% més lent (P90). Aditiva — coincideix amb la suma de fases.")
+    t3.metric("Fase valoració", f"{v_now} dies", d_val, delta_color="inverse")
+    t4.metric("Fase PIA", f"{p_now} dies", d_pia, delta_color="inverse")
 
     st.markdown("")
 
@@ -260,6 +266,27 @@ def render_p1():
     pct_now = recent_f["pct_digital"].mean()
     c5.metric("% Digital", f"{pct_now:.0f}%",
               f"+{pct_now - early_f['pct_digital'].mean():.0f} pp vs inici")
+
+    st.markdown("")
+
+    # --- Row 3: Mesures del Pla de Xoc (placeholders fins que activin) ---
+    st.markdown(
+        f"<div style='font-size:0.72rem;font-weight:600;color:{C_GRAY_500};"
+        "text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.3rem'>"
+        "Mesures del Pla de Xoc</div>",
+        unsafe_allow_html=True,
+    )
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("PIA exprés atorgats", "0",
+              help="PIAs aprovats via declaració responsable (mesura A.3 PECEF). Pendent d'activació.")
+    m2.metric("Prestacions d'espera atorgades", "0",
+              help="Persones cobrant prestació compensatòria mentre esperen PIA (mesura A.0). Pendent d'activació.")
+    m3.metric("Passarel·la Grau III", "0",
+              help="Expedients resolts via valoració documental (mesura A.2). Pendent d'activació.")
+    m4.metric("Reforç SEVAD — valoracions extra", "0",
+              help="Valoracions/mes addicionals per ampliació SEVAD (mesura B.1). Pendent d'activació.")
+    m5.metric("Contactats trucades 012 / cartes", "0",
+              help="Persones contactades per accelerar PIA. Pendent d'activació.")
 
     st.markdown("")
 
@@ -465,25 +492,30 @@ def render_p3():
 
     st.caption(f"Últimes dades: **{fmt_ym(row_tot['fecha'])}** · Baseline: **{BASELINE_LABEL}**")
 
-    val_now, pia_now, _ = _phase_totals(row_tot)
+    val_now, pia_now, total_p90_now = _phase_totals(row_tot)
     total_med_now = _mediana_total(df_tot_med, row_tot["fecha"])
     total_med_bl = _mediana_total(df_tot_med, pd.Timestamp(year=bl_year, month=bl_month, day=1))
 
     if bl_row is not None:
-        val_bl, pia_bl, _ = _phase_totals(bl_row)
+        val_bl, pia_bl, total_p90_bl = _phase_totals(bl_row)
         delta_val = f"{val_now - val_bl:+d}d"
         delta_pia = f"{pia_now - pia_bl:+d}d"
+        delta_p90 = f"{total_p90_now - total_p90_bl:+d}d"
     else:
-        delta_val = delta_pia = "—"
-    delta_total = (f"{total_med_now - total_med_bl:+d}d"
-                   if (total_med_now is not None and total_med_bl is not None) else "—")
+        delta_val = delta_pia = delta_p90 = "—"
+    delta_med = (f"{total_med_now - total_med_bl:+d}d"
+                 if (total_med_now is not None and total_med_bl is not None) else "—")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Termini total (mediana)",
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Termini total — Mediana",
               f"{total_med_now} dies" if total_med_now is not None else "—",
-              delta_total, delta_color="inverse")
-    c2.metric("Fase valoració", f"{val_now} dies", delta_val, delta_color="inverse")
-    c3.metric("Fase PIA", f"{pia_now} dies", delta_pia, delta_color="inverse")
+              delta_med, delta_color="inverse",
+              help="Robusta a outliers.")
+    c2.metric("Termini total — Mitjana sense outliers",
+              f"{total_p90_now} dies", delta_p90, delta_color="inverse",
+              help="Mitjana excloent el 10% més lent (P90). Aditiva: coincideix amb la suma de fases.")
+    c3.metric("Fase valoració", f"{val_now} dies", delta_val, delta_color="inverse")
+    c4.metric("Fase PIA", f"{pia_now} dies", delta_pia, delta_color="inverse")
 
     st.markdown("")
     st.markdown("#### Circuit complet — fases (per grau)")
@@ -511,12 +543,12 @@ def render_p3():
             return f"<b>{name}</b><br>{d}d"
         return f"<b>{abbrev.get(name, name)}</b><br>{d}d"
 
-    def grau_bar(row, height, big=False, grau_label=None, mediana=None):
+    def grau_bar(row, height, big=False):
+        """Stacked phase bar — clean (no left/right annotations).
+        Title/totals are rendered as a markdown header above the chart."""
         fig = go.Figure()
-        tot = 0
         for phase_name, col, color in phase_spec:
             d = int(round(row[col]))
-            tot += d
             fig.add_trace(go.Bar(
                 x=[d], y=[""], orientation="h", name=phase_name,
                 marker_color=color, marker_line_width=0,
@@ -527,24 +559,10 @@ def render_p3():
                 hovertemplate=f"<b>{phase_name}</b><br>{d} dies<extra></extra>",
                 showlegend=False,
             ))
-        med_txt = f" · <span style='color:{C_GRAY_500}'>{mediana}d (mediana)</span>" if mediana is not None else ""
-        fig.add_annotation(
-            x=tot, y=0, text=f"  <b>{tot}d</b>{med_txt}",
-            showarrow=False, xanchor="left",
-            font=dict(size=16 if big else 13, color=C_BLACK),
-        )
-        if grau_label:
-            fig.add_annotation(
-                x=0, xref="paper", y=0, yref="y",
-                text=f"<b>{grau_label}</b>",
-                showarrow=False, xanchor="right",
-                font=dict(size=12, color=C_BLACK),
-                xshift=-8,
-            )
         sfig(fig, height)
         fig.update_layout(
             barmode="stack",
-            margin=dict(l=60, r=200, t=5 if big else 0, b=25 if big else 0),
+            margin=dict(l=10, r=10, t=0, b=25 if big else 0),
             yaxis=dict(visible=False),
             xaxis=dict(
                 title_text="Dies" if big else None,
@@ -556,64 +574,46 @@ def render_p3():
         )
         return fig
 
-    # Tots — big, full width
-    st.plotly_chart(
-        grau_bar(row_tot, height=200, big=True, grau_label="Tots", mediana=total_med_now),
-        use_container_width=True, config=PC,
-    )
+    def grau_header(label, mediana, mitjana_p90, big=False):
+        """Renders the title row above each phase bar with both totals."""
+        med_str = f"{mediana}d" if mediana is not None else "—"
+        med_size = "1.7rem" if big else "1.35rem"
+        mit_size = "1.25rem" if big else "1.05rem"
+        lbl_size = "1.05rem" if big else "0.9rem"
+        st.markdown(f"""
+<div style="display:flex;align-items:baseline;gap:1.4rem;flex-wrap:wrap;
+            margin:0.6rem 0 0.2rem 0;padding-bottom:0.35rem;
+            border-bottom:1px solid {C_GRAY_100}">
+  <span style="font-size:{lbl_size};font-weight:700;color:{C_BLACK};
+               text-transform:uppercase;letter-spacing:0.05em;min-width:70px">
+    {label}</span>
+  <span style="display:flex;align-items:baseline;gap:0.4rem">
+    <span style="font-size:{med_size};font-weight:700;color:{C_VAL};line-height:1">
+      {med_str}</span>
+    <span style="font-size:0.7rem;color:{C_GRAY_500};text-transform:uppercase;
+                 letter-spacing:0.05em;font-weight:600">mediana</span>
+  </span>
+  <span style="color:{C_GRAY_300};font-size:1rem">·</span>
+  <span style="display:flex;align-items:baseline;gap:0.4rem">
+    <span style="font-size:{mit_size};font-weight:600;color:{C_BLACK};line-height:1">
+      {mitjana_p90}d</span>
+    <span style="font-size:0.7rem;color:{C_GRAY_500};text-transform:uppercase;
+                 letter-spacing:0.05em;font-weight:600">mitjana sense outliers</span>
+  </span>
+</div>
+""", unsafe_allow_html=True)
 
-    # Grau I / II / III in a single figure with independent x-axes
-    labels = ["Grau I", "Grau II", "Grau III"]
-    rows_by_grau = {g: _latest_complete(terminis[g]) for g in labels}
-    med_by_grau = {g: _mediana_total(terminis_med[g], rows_by_grau[g]["fecha"]) for g in labels}
+    # Tots — big
+    grau_header("Tots", total_med_now, total_p90_now, big=True)
+    st.plotly_chart(grau_bar(row_tot, height=140, big=True), use_container_width=True, config=PC)
 
-    fig_g = make_subplots(
-        rows=3, cols=1, shared_xaxes=False,
-        vertical_spacing=0.02,
-    )
-    for row_idx, label in enumerate(labels, start=1):
-        r = rows_by_grau[label]
-        tot = 0
-        for phase_name, col, color in phase_spec:
-            d = int(round(r[col]))
-            tot += d
-            fig_g.add_trace(go.Bar(
-                x=[d], y=[""], orientation="h", name=phase_name,
-                marker_color=color, marker_line_width=0,
-                text=bar_label(phase_name, d),
-                textposition="inside", insidetextanchor="middle",
-                textfont=dict(size=11, color="white"),
-                textangle=0, constraintext="inside",
-                hovertemplate=f"<b>{label} — {phase_name}</b><br>{d} dies<extra></extra>",
-                showlegend=False,
-            ), row=row_idx, col=1)
-        # Total annotation on the right (with mediana per grau)
-        med = med_by_grau[label]
-        med_txt = f" · <span style='color:{C_GRAY_500}'>{med}d (mediana)</span>" if med is not None else ""
-        fig_g.add_annotation(
-            xref=f"x{row_idx if row_idx > 1 else ''}", yref=f"y{row_idx if row_idx > 1 else ''}",
-            x=tot, y=0, text=f"  <b>{tot}d</b>{med_txt}",
-            showarrow=False, xanchor="left",
-            font=dict(size=13, color=C_BLACK),
-        )
-        # Grau label on the left
-        fig_g.add_annotation(
-            xref="paper", yref=f"y{row_idx if row_idx > 1 else ''}",
-            x=0, y=0, text=f"<b>{label}</b>",
-            showarrow=False, xanchor="right", xshift=-8,
-            font=dict(size=12, color=C_BLACK),
-        )
-
-    fig_g.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, showline=False, visible=False)
-    fig_g.update_yaxes(visible=False)
-    sfig(fig_g, 200)
-    fig_g.update_layout(
-        barmode="stack",
-        margin=dict(l=60, r=200, t=0, b=0),
-        bargap=0.4,
-        hovermode="closest",
-    )
-    st.plotly_chart(fig_g, use_container_width=True, config=PC)
+    # Grau I / II / III — same pattern, smaller
+    for label in ["Grau I", "Grau II", "Grau III"]:
+        r = _latest_complete(terminis[label])
+        med = _mediana_total(terminis_med[label], r["fecha"])
+        _, _, p90_total = _phase_totals(r)
+        grau_header(label, med, p90_total, big=False)
+        st.plotly_chart(grau_bar(r, height=85, big=False), use_container_width=True, config=PC)
 
     st.markdown("")
     st.markdown("#### Metodologia")
@@ -794,11 +794,111 @@ def render_p5():
 
 
 # ---------------------------------------------------------------------------
+# P6 — Prestacions (distribució per tipus de recurs)
+# ---------------------------------------------------------------------------
+@st.cache_data
+def load_prestacions():
+    return pd.read_csv(DATA / "prestacions.csv")
+
+
+# Stable color per tipus (used in chart + table)
+PREST_COLORS = {
+    "Prestació cuidador": C_VAL,
+    "PEV residència": "#1e3a5f",
+    "PEV centre de dia": "#3b82f6",
+    "PEV SAD": "#93c5fd",
+    "Serveis + combinacions": "#16a34a",
+}
+
+
+def render_p6():
+    df = load_prestacions()
+    cats = df[df["tipus"] != "Total"].copy()
+    tot = df[df["tipus"] == "Total"].iloc[0]
+
+    st.caption(
+        "Distribució dels procediments de valoració segons el tipus de recurs assignat. "
+        "Mostra cap a on flueixen les valoracions inicials i les revisions/reclamacions."
+    )
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Procediments inicials", fmt(int(tot["inicials_n"])))
+    c2.metric("Revisions / reclamacions", fmt(int(tot["revisions_n"])))
+    c3.metric("Total procediments", fmt(int(tot["total_n"])))
+
+    st.markdown("")
+    st.markdown("#### Distribució — inicials vs revisions")
+
+    # Two horizontal stacked bars (one per cohort), colored by tipus
+    fig = go.Figure()
+    cohorts = [
+        ("Revisions / reclamacions", "revisions_n", "revisions_pct"),
+        ("Procediments inicials", "inicials_n", "inicials_pct"),
+    ]  # reversed so 'Inicials' renders on top
+
+    for _, row in cats.iterrows():
+        tipus = row["tipus"]
+        color = PREST_COLORS.get(tipus, C_GRAY_500)
+        xs, ys, texts, hovers = [], [], [], []
+        for cohort_lbl, n_col, pct_col in cohorts:
+            xs.append(row[n_col])
+            ys.append(cohort_lbl)
+            pct = row[pct_col]
+            texts.append(f"{pct}%" if pct >= 5 else "")
+            hovers.append(f"<b>{tipus}</b><br>{int(row[n_col]):,}".replace(",", ".")
+                          + f" ({pct}%)<extra></extra>")
+        fig.add_trace(go.Bar(
+            y=ys, x=xs, orientation="h", name=tipus,
+            marker_color=color, marker_line_width=0,
+            text=texts, textposition="inside", insidetextanchor="middle",
+            textfont=dict(size=12, color="white"),
+            hovertemplate=hovers,
+        ))
+
+    sfig(fig, 280)
+    fig.update_layout(
+        barmode="stack",
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="left", x=0,
+                    font=dict(size=11)),
+        margin=dict(l=170, r=20, t=10, b=80),
+        hovermode="closest",
+    )
+    fig.update_xaxes(title_text="Nombre de procediments", tickformat=",")
+    fig.update_yaxes(showgrid=False)
+    st.plotly_chart(fig, use_container_width=True, config=PC)
+
+    st.markdown("#### Taula resum")
+
+    # Build display table with formatted "n (%)" cells
+    def cell(n, p):
+        return f"{int(n):,}".replace(",", ".") + f"  ({p}%)"
+
+    display = pd.DataFrame({
+        "Tipus de recurs": df["tipus"],
+        "Procediments inicials": [cell(n, p) for n, p in zip(df["inicials_n"], df["inicials_pct"])],
+        "Revisions / reclamacions": [cell(n, p) for n, p in zip(df["revisions_n"], df["revisions_pct"])],
+        "Total procediments": [cell(n, p) for n, p in zip(df["total_n"], df["total_pct"])],
+    })
+    st.dataframe(display, hide_index=True, use_container_width=True)
+
+    st.markdown(
+        f"<div style='color:{C_GRAY_500};font-size:0.8rem;margin-top:0.5rem'>"
+        "<b>Lectura:</b> en els procediments inicials domina la prestació cuidador (82%), "
+        "mentre que en les revisions/reclamacions guanyen pes els serveis i combinacions (51%) "
+        "i la prestació cuidador baixa al 41%."
+        "</div>", unsafe_allow_html=True
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-p1, p2, p3, p4, p5 = st.tabs(["IMPACTE", "VOLUM", "TERMINIS", "DIGITALITZACIÓ", "IMSERSO"])
+p1, p2, p3, p4, p5, p6 = st.tabs(
+    ["IMPACTE", "VOLUM", "TERMINIS", "PRESTACIONS", "DIGITALITZACIÓ", "IMSERSO"]
+)
 with p1: render_p1()
 with p2: render_p2()
 with p3: render_p3()
-with p4: render_p4()
-with p5: render_p5()
+with p4: render_p6()
+with p5: render_p4()
+with p6: render_p5()
