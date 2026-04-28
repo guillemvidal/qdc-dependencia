@@ -234,7 +234,7 @@ def render_p1():
     t2.metric("Temps total — Mitjana sense outliers",
               f"{t_now_p90} dies",
               d_total_p90, delta_color="inverse",
-              help="Mitjana del termini total, excloent el 10% més lent (P90). Aditiva — coincideix amb la suma de fases.")
+              help="Mitjana del termini total excloent outliers (mètode IQR, com en un boxplot: fora els valors extrems segons Q1−1,5·IQR i Q3+1,5·IQR). Aditiva — coincideix amb la suma de fases.")
     t3.metric("Fase valoració", f"{v_now} dies", d_val, delta_color="inverse")
     t4.metric("Fase PIA", f"{p_now} dies", d_pia, delta_color="inverse")
 
@@ -513,7 +513,7 @@ def render_p3():
               help="Robusta a outliers.")
     c2.metric("Termini total — Mitjana sense outliers",
               f"{total_p90_now} dies", delta_p90, delta_color="inverse",
-              help="Mitjana excloent el 10% més lent (P90). Aditiva: coincideix amb la suma de fases.")
+              help="Mitjana excloent outliers (mètode IQR, com en un boxplot: fora els valors extrems segons Q1−1,5·IQR i Q3+1,5·IQR). Aditiva: coincideix amb la suma de fases.")
     c3.metric("Fase valoració", f"{val_now} dies", delta_val, delta_color="inverse")
     c4.metric("Fase PIA", f"{pia_now} dies", delta_pia, delta_color="inverse")
 
@@ -577,27 +577,27 @@ def render_p3():
     def grau_header(label, mediana, mitjana_p90, big=False):
         """Renders the title row above each phase bar with both totals."""
         med_str = f"{mediana}d" if mediana is not None else "—"
-        med_size = "1.7rem" if big else "1.35rem"
-        mit_size = "1.25rem" if big else "1.05rem"
-        lbl_size = "1.05rem" if big else "0.9rem"
+        num_size = "1.5rem" if big else "1.05rem"
+        lbl_size = "1.05rem" if big else "0.85rem"
+        kpi_lbl_size = "0.7rem" if big else "0.65rem"
         st.markdown(f"""
 <div style="display:flex;align-items:baseline;gap:1.4rem;flex-wrap:wrap;
-            margin:0.6rem 0 0.2rem 0;padding-bottom:0.35rem;
+            margin:0.55rem 0 0.15rem 0;padding-bottom:0.25rem;
             border-bottom:1px solid {C_GRAY_100}">
   <span style="font-size:{lbl_size};font-weight:700;color:{C_BLACK};
                text-transform:uppercase;letter-spacing:0.05em;min-width:70px">
     {label}</span>
   <span style="display:flex;align-items:baseline;gap:0.4rem">
-    <span style="font-size:{med_size};font-weight:700;color:{C_VAL};line-height:1">
+    <span style="font-size:{num_size};font-weight:700;color:{C_BLACK};line-height:1">
       {med_str}</span>
-    <span style="font-size:0.7rem;color:{C_GRAY_500};text-transform:uppercase;
+    <span style="font-size:{kpi_lbl_size};color:{C_GRAY_500};text-transform:uppercase;
                  letter-spacing:0.05em;font-weight:600">mediana</span>
   </span>
   <span style="color:{C_GRAY_300};font-size:1rem">·</span>
   <span style="display:flex;align-items:baseline;gap:0.4rem">
-    <span style="font-size:{mit_size};font-weight:600;color:{C_BLACK};line-height:1">
+    <span style="font-size:{num_size};font-weight:700;color:{C_BLACK};line-height:1">
       {mitjana_p90}d</span>
-    <span style="font-size:0.7rem;color:{C_GRAY_500};text-transform:uppercase;
+    <span style="font-size:{kpi_lbl_size};color:{C_GRAY_500};text-transform:uppercase;
                  letter-spacing:0.05em;font-weight:600">mitjana sense outliers</span>
   </span>
 </div>
@@ -607,13 +607,13 @@ def render_p3():
     grau_header("Tots", total_med_now, total_p90_now, big=True)
     st.plotly_chart(grau_bar(row_tot, height=140, big=True), use_container_width=True, config=PC)
 
-    # Grau I / II / III — same pattern, smaller
+    # Grau I / II / III — same pattern, more compact
     for label in ["Grau I", "Grau II", "Grau III"]:
         r = _latest_complete(terminis[label])
         med = _mediana_total(terminis_med[label], r["fecha"])
         _, _, p90_total = _phase_totals(r)
         grau_header(label, med, p90_total, big=False)
-        st.plotly_chart(grau_bar(r, height=85, big=False), use_container_width=True, config=PC)
+        st.plotly_chart(grau_bar(r, height=60, big=False), use_container_width=True, config=PC)
 
     st.markdown("")
     st.markdown("#### Metodologia")
@@ -622,7 +622,7 @@ def render_p3():
         "**Filtre:** només inicials (sense revisions ni reclamacions) · "
         "**Desglossament:** per grau (I, II, III)\n"
         "- **KPI principal:** *mediana* (robusta a outliers; valor de referència)\n"
-        "- **Barres de fases:** *mitjana excloent el 10% més lent (P90)*, "
+        "- **Barres de fases:** *mitjana excloent outliers (mètode IQR, com en un boxplot)*, "
         "perquè les mitjanes sí que sumen entre fases (la mediana no)"
     )
 
@@ -820,6 +820,10 @@ def render_p6():
         "Distribució dels procediments de valoració segons el tipus de recurs assignat. "
         "Mostra cap a on flueixen les valoracions inicials i les revisions/reclamacions."
     )
+    st.info(
+        "Dades acumulades de l'any **2025**. Properament s'actualitzaran amb periodicitat mensual.",
+        icon="📅",
+    )
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Procediments inicials", fmt(int(tot["inicials_n"])))
@@ -855,16 +859,17 @@ def render_p6():
             hovertemplate=hovers,
         ))
 
-    sfig(fig, 280)
+    sfig(fig, 320)
     fig.update_layout(
         barmode="stack",
-        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="left", x=0,
-                    font=dict(size=11)),
-        margin=dict(l=170, r=20, t=10, b=80),
+        legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="left", x=0,
+                    font=dict(size=14), itemwidth=30),
+        margin=dict(l=170, r=20, t=10, b=110),
         hovermode="closest",
     )
-    fig.update_xaxes(title_text="Nombre de procediments", tickformat=",")
-    fig.update_yaxes(showgrid=False)
+    fig.update_xaxes(title_text="Nombre de procediments", tickformat=",",
+                     title_font=dict(size=13), tickfont=dict(size=12))
+    fig.update_yaxes(showgrid=False, tickfont=dict(size=13))
     st.plotly_chart(fig, use_container_width=True, config=PC)
 
     st.markdown("#### Taula resum")

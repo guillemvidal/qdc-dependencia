@@ -1,11 +1,17 @@
 """Parse 'Pestanya 3. Terminis' Excel files → terminis_<grau>[_mediana].csv.
 
 Generates two parallel sets:
-  - Mitjana P90 → terminis_<grau>.csv         (additive: sub-phases sum to total)
-  - Mediana inicials → terminis_<grau>_mediana.csv  (robust to outliers, non-additive)
+  - Mitjana sense outliers → terminis_<grau>.csv  (additive: sub-phases sum
+    to total). Outliers excluded with the IQR / boxplot rule (values outside
+    Q1−1.5·IQR and Q3+1.5·IQR).
+  - Mediana → terminis_<grau>_mediana.csv  (robust to outliers, non-additive).
 
-The dashboard uses mediana for the headline total KPI and Mitjana P90 for
-the phase-by-phase breakdown.
+The dashboard shows both as headline KPIs and uses the mitjana decomposition
+for the phase-by-phase stacked bars.
+
+Source folder name "Mitjana P90" is kept for backwards compatibility with the
+existing exported folder structure — it actually contains the IQR-filtered
+mitjana, not a P90 trim.
 """
 import pandas as pd
 from pathlib import Path
